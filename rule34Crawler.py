@@ -3,6 +3,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from uitls.FileUtils import replace_illegal_chars
+from uitls.FileUtils import redlines
 
 from uitls.Log import set_console_log
 import requests
@@ -16,6 +17,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 # video_url example: https://rule34video.com/videos/3138647/genshin-girls-music-part-2/
 def download_rule34video(video_url, local_video_path):
+    legal_filename = None
     chrome_options = Options()
     chrome_options.add_argument("--headless")
     # 后台初始化一个 Chrome 浏览器实例
@@ -44,46 +46,75 @@ def download_rule34video(video_url, local_video_path):
             today_path = local_video_path + '/' + datetime.now().strftime('%Y-%m-%d')
             # 使用os模块的makedirs函数创建文件夹
             os.makedirs(today_path, exist_ok=True)
-            with open(f"{today_path}/{replace_illegal_chars(driver.title+'.mp4')}", "wb") as f:
+            legal_filename = replace_illegal_chars(driver.title + '.mp4')
+            with open(f"{today_path}/{legal_filename}", "wb") as f:
                 f.write(response.content)
 
     # 关闭浏览器实例
     driver.quit()
+    return legal_filename
+
+
+ok_url_file = 'ok urls.txt'
+failed_url_file = 'failed urls.txt'
+retry_url_file = 'retry urls.txt'
 
 
 def download_rule34video_with_retry(video_url, local_video_path):
     need_retry = True
     retry_time = 0
     max_retry_limit = 5
+    legal_filename = None
     while need_retry and retry_time < max_retry_limit:
         try:
             need_retry = False
-            download_rule34video(video_url, local_video_path)
+            legal_filename = download_rule34video(video_url, local_video_path)
         except Exception as e:
             retry_time += 1
             need_retry = True
-            logging.warning(f'download_rule34video failed, retry time:{retry_time}', e)
+            logging.warning(f'download_rule34video failed, retry time:{retry_time}')
+            logging.warning(e)
 
     if need_retry:
-        with open('failed urls.txt', 'a') as f:
+        with open(failed_url_file, 'a') as f:
             # 写入url+换行符
             f.write(f'{video_url}\n')
+            if legal_filename:
+                f.write(f'{legal_filename}\n')
     else:
-        with open('ok urls.txt', 'a') as f:
+        with open(ok_url_file, 'a') as f:
             # 写入url+换行符
             f.write(f'{video_url}\n')
+            if legal_filename:
+                f.write(f'{legal_filename}\n')
+
+
+ok_urls = None
+retry_urls = None
+failed_urls = None
 
 
 def parse_rule34video_links(rule34_root, local_video_path):
     response = requests.get(rule34_root)
+    global ok_urls
+    global retry_urls
+    global failed_urls
+    ok_urls = redlines(ok_url_file)
+    retry_urls = redlines(retry_url_file)
+    failed_urls = redlines(failed_url_file)
     soup = BeautifulSoup(response.text, 'html.parser')
 
     # get video page url
     elements = soup.find_all('a', class_="th js-open-popup")
 
     with ThreadPoolExecutor(max_workers=5) as executor:
-        [executor.submit(download_rule34video_with_retry, element.get('href'), local_video_path) for element in
-         elements]
+        if retry_urls:
+            for retry_url in retry_urls:
+                executor.submit(download_rule34video_with_retry, retry_url, local_video_path)
+        for element in elements:
+            video_page_url = element.get('href')
+            if ok_urls and video_page_url not in ok_urls:
+                executor.submit(download_rule34video_with_retry, video_page_url, local_video_path)
 
 
 def main():
