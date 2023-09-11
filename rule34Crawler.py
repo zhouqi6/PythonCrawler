@@ -47,8 +47,11 @@ def download_rule34video(video_url, local_video_path):
             # 使用os模块的makedirs函数创建文件夹
             os.makedirs(today_path, exist_ok=True)
             legal_filename = replace_illegal_chars(driver.title + '.mp4')
+            chunk_size = 102400  # 每个块的大小
             with open(f"{today_path}/{legal_filename}", "wb") as f:
-                f.write(response.content)
+                for chunk in response.iter_content(chunk_size=chunk_size):
+                    # 写入每个块的内容
+                    f.write(chunk)
 
     # 关闭浏览器实例
     driver.quit()
