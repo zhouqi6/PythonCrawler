@@ -5,7 +5,7 @@ from datetime import datetime
 from uitls.FileUtils import replace_illegal_chars
 from uitls.FileUtils import redlines
 
-from uitls.Log import set_console_log
+from uitls.Log import set_loggers
 import requests
 from bs4 import BeautifulSoup
 from selenium import webdriver
@@ -52,6 +52,8 @@ def download_rule34video(video_url, local_video_path):
                 for chunk in response.iter_content(chunk_size=chunk_size):
                     # 写入每个块的内容
                     f.write(chunk)
+        else:
+            logging.debug(f'video_url:{video_url}, label.text:{label.text}')
 
     # 关闭浏览器实例
     driver.quit()
@@ -118,12 +120,12 @@ def parse_rule34video_links(rule34_root, local_video_path):
                 executor.submit(download_rule34video_with_retry, retry_url, local_video_path)
         for element in elements:
             video_page_url = element.get('href')
-            if ok_urls and video_page_url not in ok_urls:
+            if video_page_url not in ok_urls:
                 executor.submit(download_rule34video_with_retry, video_page_url, local_video_path)
 
 
 def main():
-    set_console_log()
+    set_loggers()
     parse_rule34video_links('https://rule34video.com/', r'D:\P\Video\Rule34')
 
 
