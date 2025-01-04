@@ -2,6 +2,8 @@ import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+
+from Parsers.parse_rule34_video_links import parse_rule34_video_page_links
 from uitls.FileUtils import replace_illegal_chars
 from uitls.FileUtils import redlines
 
@@ -24,13 +26,17 @@ def download_rule34video(video_url, local_video_path):
     driver = webdriver.Chrome(options=chrome_options)
     # 打开某个网页
     driver.get(video_url)
-    # 等待页面加载完全
+    # 等待页面加载完全后，获取继续按钮（确认满18）
     button_continue = WebDriverWait(driver, 3).until(EC.element_to_be_clickable((By.XPATH, '//*[@name="continue"]')))
     button_continue.click()
 
+    download_div_label = 'Download'
     labels = driver.find_elements(By.CLASS_NAME, 'label')
+    found_download_label = False
     for label in labels:
-        if label.text == 'Download:':
+        if label.text == download_div_label:
+            parent_element = label.find_element(By.XPATH, "..")
+            parent_element_class = parent_element.get_property('class')
             first_href = label.parent.find_element(By.CLASS_NAME, 'tag_item')
             video_download_href = first_href.get_property('href')
             # 获取页面的用户代理
@@ -52,8 +58,10 @@ def download_rule34video(video_url, local_video_path):
                 for chunk in response.iter_content(chunk_size=chunk_size):
                     # 写入每个块的内容
                     f.write(chunk)
-        else:
-            logging.debug(f'video_url:{video_url}, label.text:{label.text}')
+            found_download_label = True
+
+    if not found_download_label:
+        raise ValueError(f'{download_div_label} not found in url:{video_url}')
 
     # 关闭浏览器实例
     driver.quit()
@@ -87,6 +95,7 @@ def download_rule34video_with_retry(video_url, local_video_path):
             if legal_filename:
                 f.write(f'{legal_filename}\n')
     else:
+        # 先不记录成功结果，调试中
         with open(ok_url_file, 'a') as f:
             # 写入url+换行符
             f.write(f'{video_url}\n')
@@ -99,34 +108,28 @@ retry_urls = None
 failed_urls = None
 
 
-def parse_rule34video_links(rule34_root, local_video_path):
-    user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36"
-    headers = {'User-Agent': user_agent}
-    response = requests.get(rule34_root, headers=headers)
+# 解析所有rule34_url中的视频页面的链接，并且下载他们的视频（跳过成功的项），重试下载失败的链接
+def try_download_video_links(rule34_root, local_video_path):
+    parsed_video_links = parse_rule34_video_page_links(rule34_root)
     global ok_urls
     global retry_urls
     global failed_urls
     ok_urls = redlines(ok_url_file)
     retry_urls = redlines(retry_url_file)
     failed_urls = redlines(failed_url_file)
-    soup = BeautifulSoup(response.text, 'html.parser')
 
-    # get video page url
-    elements = soup.find_all('a', class_="th js-open-popup")
-
-    with ThreadPoolExecutor(max_workers=5) as executor:
+    with ThreadPoolExecutor(max_workers=1) as executor:
         if retry_urls:
             for retry_url in retry_urls:
                 executor.submit(download_rule34video_with_retry, retry_url, local_video_path)
-        for element in elements:
-            video_page_url = element.get('href')
+        for video_page_url in parsed_video_links:
             if video_page_url not in ok_urls:
                 executor.submit(download_rule34video_with_retry, video_page_url, local_video_path)
 
 
 def main():
     set_loggers()
-    parse_rule34video_links('https://rule34video.com/', r'D:\P\Video\Rule34')
+    try_download_video_links('https://rule34video.com/', r'D:\P\Video\Rule34')
 
 
 if __name__ == "__main__":
