@@ -98,7 +98,9 @@ failed_urls = None
 
 
 def parse_rule34video_links(rule34_root, local_video_path):
-    response = requests.get(rule34_root)
+    user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36"
+    headers = {'User-Agent': user_agent}
+    response = requests.get(rule34_root, headers=headers)
     global ok_urls
     global retry_urls
     global failed_urls
