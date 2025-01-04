@@ -3,7 +3,7 @@ import logging
 
 def set_loggers():
     # 设置日志级别为DEBUG，并设置输出格式
-    logging.basicConfig(level=logging.DEBUG,
+    logging.basicConfig(level=logging.WARN,
                         format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s',
                         datefmt='%m-%d %H:%M',
                         filename='crawler.log',
