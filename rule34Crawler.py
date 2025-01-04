@@ -16,6 +16,15 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
+# 根据正则表达式筛选tag_item中的视频链接
+# tag_item示例：<a class="tag_item" href="https://rule34video.com/get_file/47/" data-attach-session="PHPSESSID">MP4 1080p</a>
+def get_video_download_url_from_tag_item(tag_item):
+    href = tag_item.get_property('href')
+    if href is not None and href.startswith('https://rule34video.com/get_file'):
+        return href
+    else:
+        return None
+
 
 # video_url example: https://rule34video.com/videos/3138647/genshin-girls-music-part-2/
 def download_rule34video(video_url, local_video_path):
@@ -31,14 +40,12 @@ def download_rule34video(video_url, local_video_path):
     button_continue.click()
 
     download_div_label = 'Download'
-    labels = driver.find_elements(By.CLASS_NAME, 'label')
+    # 找到所有的tag_item
+    tag_items = driver.find_elements(By.CLASS_NAME, 'tag_item')
     found_download_label = False
-    for label in labels:
-        if label.text == download_div_label:
-            parent_element = label.find_element(By.XPATH, "..")
-            parent_element_class = parent_element.get_property('class')
-            first_href = label.parent.find_element(By.CLASS_NAME, 'tag_item')
-            video_download_href = first_href.get_property('href')
+    for tag_item in tag_items:
+        video_download_url = get_video_download_url_from_tag_item(tag_item)
+        if video_download_url is not None:
             # 获取页面的用户代理
             user_agent = driver.execute_script('return navigator.userAgent')
             headers = {'User-Agent': user_agent}
@@ -48,7 +55,7 @@ def download_rule34video(video_url, local_video_path):
             for cookie in cookies_list:
                 cookies_dict[cookie['name']] = cookie['value']
             # 下载文件
-            response = requests.get(video_download_href, headers=headers, cookies=cookies_dict)
+            response = requests.get(video_download_url, headers=headers, cookies=cookies_dict)
             today_path = local_video_path + '/' + datetime.now().strftime('%Y-%m-%d')
             # 使用os模块的makedirs函数创建文件夹
             os.makedirs(today_path, exist_ok=True)
@@ -59,9 +66,11 @@ def download_rule34video(video_url, local_video_path):
                     # 写入每个块的内容
                     f.write(chunk)
             found_download_label = True
+            # 当前第一个是最高清晰度，只下载第一个，后续是否需要优化逻辑
+            break
 
     if not found_download_label:
-        raise ValueError(f'{download_div_label} not found in url:{video_url}')
+        raise ValueError(f'video download url not found in url:{video_url}')
 
     # 关闭浏览器实例
     driver.quit()
@@ -118,7 +127,7 @@ def try_download_video_links(rule34_root, local_video_path):
     retry_urls = redlines(retry_url_file)
     failed_urls = redlines(failed_url_file)
 
-    with ThreadPoolExecutor(max_workers=1) as executor:
+    with ThreadPoolExecutor(max_workers=32) as executor:
         if retry_urls:
             for retry_url in retry_urls:
                 executor.submit(download_rule34video_with_retry, retry_url, local_video_path)
